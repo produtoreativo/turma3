@@ -1,0 +1,70 @@
+name: Deploy to ECR & EC2
+
+on:
+  push:
+    branches:
+      - 'master'
+
+jobs:
+  build_and_deploy:
+    name: Build Docker Image & deploy on EC2
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v2
+
+    - name: Create env file
+      run: |
+        touch .env
+        echo DATABASE_URL=${{ secrets.DATABASE_URL }} >> .env
+        cat .env
+
+    - name: Install dependencies
+      run: npm i
+
+    # EXECUTAR O SAST
+    # - name: Run Snyk to check for vulnerabilities
+    #   uses: snyk/actions/node@master
+    #   env:
+    #     SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+    #   with:
+    #     command: monitor
+
+    # - name: Run test with coverage
+    #   run: npm run test:cov
+
+    # - name: SonarCloud Scan
+    #   uses: SonarSource/sonarcloud-github-action@master
+    #   env:
+    #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
+    #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    #     SONAR_RUN_PROJECT_KEY: ${{ secrets.SONAR_RUN_PROJECT_KEY }}
+    #     SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Build, tag, and push image to Amazon ECR
+      id: build-ecr
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: adora
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        echo "Pushing image to ECR... $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG "
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+    - name: Log out of Amazon ECR
+      if: always()
+      run: docker logout ${{ steps.login-ecr.outputs.registry }}
