@@ -68,3 +68,20 @@ jobs:
     - name: Log out of Amazon ECR
       if: always()
       run: docker logout ${{ steps.login-ecr.outputs.registry }}
+
+    - name: executing remote ssh commands using ssh key
+      uses: appleboy/ssh-action@master
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: turma3
+        IMAGE_TAG: ${{ github.sha }}
+      with:
+        host: ${{ secrets.AWS_HOST }}
+        username: ${{ secrets.AWS_USER }}
+        key: ${{ secrets.AWS_KEY }}
+        envs: ECR_REGISTRY,ECR_REPOSITORY,IMAGE_TAG
+        script:  |
+          $(aws ecr get-login --no-include-email --region us-east-2)
+          docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker stop turma3
+          docker run --rm -d -p 3000:3000 --name turma3 $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
